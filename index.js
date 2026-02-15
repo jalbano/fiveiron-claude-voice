@@ -36,14 +36,14 @@ const server = new McpServer({
 function recordAudio(outPath, maxSeconds = 30) {
   return new Promise((resolve, reject) => {
     // sox's rec command with silence detection:
-    //   silence 1 0.1 3%  → skip leading silence (start on voice)
-    //   1 2.0 3%          → stop after 2s of silence
+    //   Record immediately (no leading silence skip — whisper handles dead air fine,
+    //   and skipping leading silence eats the first word or two).
+    //   Stop after 2s of silence below 3%.
     const args = [
       outPath,
       "rate", "16k",       // whisper wants 16kHz
       "channels", "1",     // mono
       "silence",
-        "1", "0.01", "1%",  // wait for speech (10ms detection, very low threshold)
         "1", "2.0", "3%",   // stop after 2s of silence
     ];
 
@@ -156,6 +156,22 @@ server.tool(
   async ({ text, voice, rate }) => {
     try {
       killActiveSay();
+
+      // Check if Spotify is playing and pause it
+      let wasPlaying = false;
+      try {
+        const { stdout } = await execFileAsync("/usr/bin/osascript", [
+          "-e", 'tell application "System Events" to (name of processes) contains "Spotify"',
+          "-e", 'if result then tell application "Spotify" to player state as string',
+        ]);
+        wasPlaying = stdout.trim() === "playing";
+        if (wasPlaying) {
+          await execFileAsync("/usr/bin/osascript", [
+            "-e", 'tell application "Spotify" to pause',
+          ]);
+        }
+      } catch {}
+
       const proc = spawn("/usr/bin/say", [
         "-v", voice,
         "-r", String(rate),
@@ -168,6 +184,15 @@ server.tool(
         proc.on("close", () => { activeSayProc = null; resolve(); });
         proc.on("error", (err) => { activeSayProc = null; reject(err); });
       });
+
+      // Resume Spotify if it was playing
+      if (wasPlaying) {
+        try {
+          await execFileAsync("/usr/bin/osascript", [
+            "-e", 'tell application "Spotify" to play',
+          ]);
+        } catch {}
+      }
 
       return {
         content: [{ type: "text", text: "[Spoken successfully]" }],

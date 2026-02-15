@@ -5,6 +5,29 @@ WHISPER_DIR="$HOME/.local/share/whisper.cpp"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== Voice MCP Setup ==="
+echo ""
+echo "This script will:"
+echo ""
+if ! command -v rec &>/dev/null; then
+  echo "  1. Install sox via Homebrew (for audio recording)"
+else
+  echo "  1. sox — already installed, skipping"
+fi
+if [ -f "$WHISPER_DIR/whisper-cli" ] && [ -f "$WHISPER_DIR/ggml-base.en.bin" ]; then
+  echo "  2. whisper.cpp — already installed, skipping"
+else
+  echo "  2. Clone, build, and install whisper.cpp + base.en model to $WHISPER_DIR"
+fi
+echo "  3. Run npm install for the MCP server"
+echo "  4. Install the /voice skill to ~/.claude/skills/voice/"
+echo "  5. Register the voice MCP server with Claude Code"
+echo ""
+read -rp "Continue? [Y/n] " answer
+if [[ "$answer" =~ ^[Nn] ]]; then
+  echo "Aborted."
+  exit 0
+fi
+echo ""
 
 # 1. Install sox (for audio recording)
 if ! command -v rec &>/dev/null; then
@@ -49,10 +72,10 @@ echo "Installing MCP server dependencies..."
 cd "$SCRIPT_DIR"
 npm install --registry https://registry.npmjs.org/
 
-# 4. Install /v skill
-echo "Installing /v skill..."
-mkdir -p "$HOME/.claude/skills/v"
-cp "$SCRIPT_DIR/skill.md" "$HOME/.claude/skills/v/SKILL.md"
+# 4. Install /voice skill
+echo "Installing /voice skill..."
+mkdir -p "$HOME/.claude/skills/voice"
+cp "$SCRIPT_DIR/skill.md" "$HOME/.claude/skills/voice/SKILL.md"
 echo "Skill installed"
 
 # 5. Register with Claude Code
@@ -64,4 +87,4 @@ fi
 
 echo ""
 echo "=== Setup complete ==="
-echo "Restart Claude Code and type /v to start talking."
+echo "Restart Claude Code and type /voice to start talking."
