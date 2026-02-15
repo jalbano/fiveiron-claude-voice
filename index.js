@@ -28,23 +28,45 @@ function killActiveSay() {
   }
 }
 
+const SILENCE_THRESHOLD_DEFAULT = 0.5;
+const SILENCE_THRESHOLD_BLUETOOTH = 0.1;
+
+async function isBluetoothMic() {
+  if (process.platform !== "darwin") return false;
+  try {
+    const { stdout } = await execFileAsync("/usr/sbin/system_profiler", ["SPAudioDataType"], { timeout: 5000 });
+    const lines = stdout.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes("Default Input Device: Yes")) {
+        for (let j = i - 1; j >= 0 && j >= i - 10; j--) {
+          if (lines[j].includes("Transport:")) {
+            return lines[j].includes("Bluetooth");
+          }
+        }
+      }
+    }
+  } catch {}
+  return false;
+}
+
 const server = new McpServer({
   name: "voice",
   version: "1.0.0",
 });
 
-function recordAudio(outPath, maxSeconds = 30) {
+function recordAudio(outPath, maxSeconds = 30, silenceThreshold = 0.5) {
   return new Promise((resolve, reject) => {
     // sox's rec command with silence detection:
-    //   Record immediately (no leading silence skip — whisper handles dead air fine,
-    //   and skipping leading silence eats the first word or two).
-    //   Stop after 2s of silence below 3%.
+    //   -l = keep all audio (don't trim) — prevents first-word clipping
+    //   First group:  wait for speech (0.1s above 1%) — avoids blank recordings
+    //   Second group: stop after 2s of silence below threshold
     const args = [
       outPath,
       "rate", "16k",       // whisper wants 16kHz
       "channels", "1",     // mono
-      "silence",
-        "1", "2.0", "3%",   // stop after 2s of silence
+      "silence", "-l",
+        "1", "0.1", "1%",               // wait for speech before starting
+        "1", "2.0", `${silenceThreshold}%`, // stop after 2s of silence
     ];
 
     const proc = spawn(REC_BIN, args, {
@@ -94,13 +116,21 @@ server.tool(
       .optional()
       .default(30)
       .describe("Maximum recording time in seconds (default 30)"),
+    silence_threshold: z
+      .number()
+      .optional()
+      .describe("Silence detection threshold as a percentage. Auto-detected if not set (0.1 for Bluetooth, 0.5 for built-in/wired)."),
   },
-  async ({ max_seconds }) => {
+  async ({ max_seconds, silence_threshold }) => {
     killActiveSay();
+    if (silence_threshold == null) {
+      const bt = await isBluetoothMic();
+      silence_threshold = bt ? SILENCE_THRESHOLD_BLUETOOTH : SILENCE_THRESHOLD_DEFAULT;
+    }
     const audioPath = join(TMP_DIR, `recording-${Date.now()}.wav`);
 
     try {
-      await recordAudio(audioPath, max_seconds);
+      await recordAudio(audioPath, max_seconds, silence_threshold);
       const text = await transcribe(audioPath);
 
       // Clean up the temp file
