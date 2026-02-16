@@ -109,7 +109,7 @@ cp "$SCRIPT_DIR/skill.md" "$HOME/.claude/skills/speak/SKILL.md"
 
 if command -v claude &>/dev/null; then
   echo "Registering voice MCP server with Claude Code..."
-  claude mcp add --scope user --transport stdio voice -- node "$SCRIPT_DIR/index.js" 2>/dev/null || echo "  (may already exist)"
+  claude mcp add --scope user --transport stdio speak -- node "$SCRIPT_DIR/index.js" 2>/dev/null || echo "  (may already exist)"
 fi
 
 # Start Hammerspoon

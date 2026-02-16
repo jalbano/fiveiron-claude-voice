@@ -16,7 +16,7 @@ function killActiveSay() {
 }
 
 const server = new McpServer({
-  name: "voice",
+  name: "speak",
   version: "1.0.0",
 });
 
