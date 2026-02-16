@@ -2,24 +2,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
-import { existsSync, mkdirSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import { z } from "zod";
-import { homedir } from "os";
 
 const execFileAsync = promisify(execFile);
 
-const WHISPER_DIR = join(homedir(), ".local", "share", "whisper.cpp");
-const WHISPER_BIN =
-  process.env.WHISPER_BIN || join(WHISPER_DIR, "whisper-cli");
-const WHISPER_MODEL =
-  process.env.WHISPER_MODEL || join(WHISPER_DIR, "ggml-base.en.bin");
-const REC_BIN = process.env.REC_BIN || "/opt/homebrew/bin/rec";
-const TMP_DIR = join(tmpdir(), "voice-mcp");
 let activeSayProc = null;
-
-if (!existsSync(TMP_DIR)) mkdirSync(TMP_DIR, { recursive: true });
 
 function killActiveSay() {
   if (activeSayProc) {
@@ -28,144 +15,10 @@ function killActiveSay() {
   }
 }
 
-const SILENCE_THRESHOLD_DEFAULT = 0.5;
-const SILENCE_THRESHOLD_BLUETOOTH = 0.1;
-
-async function isBluetoothMic() {
-  if (process.platform !== "darwin") return false;
-  try {
-    const { stdout } = await execFileAsync("/usr/sbin/system_profiler", ["SPAudioDataType"], { timeout: 5000 });
-    const lines = stdout.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes("Default Input Device: Yes")) {
-        for (let j = i - 1; j >= 0 && j >= i - 10; j--) {
-          if (lines[j].includes("Transport:")) {
-            return lines[j].includes("Bluetooth");
-          }
-        }
-      }
-    }
-  } catch {}
-  return false;
-}
-
 const server = new McpServer({
   name: "voice",
   version: "1.0.0",
 });
-
-function recordAudio(outPath, maxSeconds = 30, silenceThreshold = 0.5) {
-  return new Promise((resolve, reject) => {
-    // sox's rec command with silence detection:
-    //   -l = keep all audio (don't trim) — prevents first-word clipping
-    //   First group:  wait for speech (0.1s above 1%) — avoids blank recordings
-    //   Second group: stop after 2s of silence below threshold
-    const args = [
-      outPath,
-      "rate", "16k",       // whisper wants 16kHz
-      "channels", "1",     // mono
-      "silence", "-l",
-        "1", "0.1", "1%",               // wait for speech before starting
-        "1", "2.0", `${silenceThreshold}%`, // stop after 2s of silence
-    ];
-
-    const proc = spawn(REC_BIN, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    const timeout = setTimeout(() => {
-      proc.kill("SIGTERM");
-    }, maxSeconds * 1000);
-
-    proc.on("close", (code) => {
-      clearTimeout(timeout);
-      if (existsSync(outPath)) {
-        resolve(outPath);
-      } else {
-        reject(new Error(`Recording failed (exit ${code})`));
-      }
-    });
-
-    proc.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-  });
-}
-
-async function transcribe(audioPath) {
-  const { stdout } = await execFileAsync(WHISPER_BIN, [
-    "-m", WHISPER_MODEL,
-    "-f", audioPath,
-    "--no-timestamps",
-    "-nt",
-  ], {
-    timeout: 30_000,
-    env: { ...process.env, DYLD_LIBRARY_PATH: WHISPER_DIR },
-  });
-
-  return stdout.trim();
-}
-
-server.tool(
-  "listen",
-  "Record audio from the microphone and transcribe it. Use this to hear what the user is saying via voice. Waits for the user to speak, then stops automatically after 2 seconds of silence.",
-  {
-    max_seconds: z
-      .number()
-      .optional()
-      .default(30)
-      .describe("Maximum recording time in seconds (default 30)"),
-    silence_threshold: z
-      .number()
-      .optional()
-      .describe("Silence detection threshold as a percentage. Auto-detected if not set (0.1 for Bluetooth, 0.5 for built-in/wired)."),
-  },
-  async ({ max_seconds, silence_threshold }) => {
-    killActiveSay();
-    if (silence_threshold == null) {
-      const bt = await isBluetoothMic();
-      silence_threshold = bt ? SILENCE_THRESHOLD_BLUETOOTH : SILENCE_THRESHOLD_DEFAULT;
-    }
-    const audioPath = join(TMP_DIR, `recording-${Date.now()}.wav`);
-
-    try {
-      await recordAudio(audioPath, max_seconds, silence_threshold);
-      const text = await transcribe(audioPath);
-
-      // Clean up the temp file
-      try {
-        const { unlink } = await import("fs/promises");
-        await unlink(audioPath);
-      } catch {}
-
-      if (!text) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "[No speech detected. The user may not have spoken, or the audio was too quiet.]",
-            },
-          ],
-        };
-      }
-
-      return {
-        content: [{ type: "text", text }],
-      };
-    } catch (err) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `[Recording/transcription error: ${err.message}]`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
 
 server.tool(
   "speak",

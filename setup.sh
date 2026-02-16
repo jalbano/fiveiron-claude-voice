@@ -2,25 +2,36 @@
 set -e
 
 WHISPER_DIR="$HOME/.local/share/whisper.cpp"
+SOUND_DIR="$HOME/.local/share/speak-mcp"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== Voice MCP Setup ==="
+echo "=== Voice for Claude Code ==="
 echo ""
 echo "This script will:"
 echo ""
+
+# Check what needs installing
 if ! command -v rec &>/dev/null; then
   echo "  1. Install sox via Homebrew (for audio recording)"
 else
-  echo "  1. sox — already installed, skipping"
+  echo "  1. sox — already installed"
 fi
+
 if [ -f "$WHISPER_DIR/whisper-cli" ] && [ -f "$WHISPER_DIR/ggml-base.en.bin" ]; then
-  echo "  2. whisper.cpp — already installed, skipping"
+  echo "  2. whisper.cpp — already installed"
 else
-  echo "  2. Clone, build, and install whisper.cpp + base.en model to $WHISPER_DIR"
+  echo "  2. Clone, build, and install whisper.cpp + base.en model"
 fi
-echo "  3. Run npm install for the MCP server"
-echo "  4. Install the /voice skill to ~/.claude/skills/voice/"
-echo "  5. Register the voice MCP server with Claude Code"
+
+if brew list --cask hammerspoon &>/dev/null 2>&1; then
+  echo "  3. Hammerspoon — already installed"
+else
+  echo "  3. Install Hammerspoon (for global voice hotkey)"
+fi
+
+echo "  4. Configure Hammerspoon hotkey (Cmd+Shift+L)"
+echo "  5. Generate custom sound effects"
+echo "  6. Install MCP server (TTS) + /speak skill for Claude Code"
 echo ""
 read -rp "Continue? [Y/n] " answer
 if [[ "$answer" =~ ^[Nn] ]]; then
@@ -29,7 +40,7 @@ if [[ "$answer" =~ ^[Nn] ]]; then
 fi
 echo ""
 
-# 1. Install sox (for audio recording)
+# 1. Install sox
 if ! command -v rec &>/dev/null; then
   echo "Installing sox..."
   brew install sox
@@ -37,7 +48,7 @@ else
   echo "sox already installed"
 fi
 
-# 2. Build whisper.cpp and install binary + model
+# 2. Build whisper.cpp
 if [ -f "$WHISPER_DIR/whisper-cli" ] && [ -f "$WHISPER_DIR/ggml-base.en.bin" ]; then
   echo "whisper.cpp already installed at $WHISPER_DIR"
 else
@@ -60,31 +71,58 @@ else
   cp build/ggml/src/ggml-blas/libggml-blas*.dylib "$WHISPER_DIR/" 2>/dev/null || true
   cp models/ggml-base.en.bin "$WHISPER_DIR/"
 
-  # Verify it works
   DYLD_LIBRARY_PATH="$WHISPER_DIR" "$WHISPER_DIR/whisper-cli" --help &>/dev/null
   echo "whisper.cpp installed successfully"
 
   rm -rf "$TMPBUILD"
 fi
 
-# 3. Install MCP server dependencies
+# 3. Install Hammerspoon
+if brew list --cask hammerspoon &>/dev/null 2>&1; then
+  echo "Hammerspoon already installed"
+else
+  echo "Installing Hammerspoon..."
+  brew install --cask hammerspoon
+fi
+
+# 4. Configure Hammerspoon hotkey
+echo "Configuring Hammerspoon..."
+mkdir -p "$HOME/.hammerspoon"
+cp "$SCRIPT_DIR/hammerspoon.lua" "$HOME/.hammerspoon/init.lua"
+echo "Hammerspoon config installed"
+
+# 5. Generate sound effects
+echo "Generating sound effects..."
+mkdir -p "$SOUND_DIR"
+sox -n "$SOUND_DIR/start.wav" synth 0.15 sine 600:900 gain -10
+sox -n "$SOUND_DIR/done.wav" synth 0.15 sine 900:600 gain -10
+echo "Sound effects created"
+
+# 6. Install MCP server + skill
 echo "Installing MCP server dependencies..."
 cd "$SCRIPT_DIR"
 npm install --registry https://registry.npmjs.org/
 
-# 4. Install /voice skill
-echo "Installing /voice skill..."
-mkdir -p "$HOME/.claude/skills/voice"
-cp "$SCRIPT_DIR/skill.md" "$HOME/.claude/skills/voice/SKILL.md"
-echo "Skill installed"
+echo "Installing /speak skill..."
+mkdir -p "$HOME/.claude/skills/speak"
+cp "$SCRIPT_DIR/skill.md" "$HOME/.claude/skills/speak/SKILL.md"
 
-# 5. Register with Claude Code
 if command -v claude &>/dev/null; then
   echo "Registering voice MCP server with Claude Code..."
-  claude mcp add --scope user --transport stdio voice -- node "$SCRIPT_DIR/index.js" 2>/dev/null || echo "Could not auto-register (may already exist or running inside Claude Code). Add manually:"
-  echo "  claude mcp add --scope user --transport stdio voice -- node $SCRIPT_DIR/index.js"
+  claude mcp add --scope user --transport stdio voice -- node "$SCRIPT_DIR/index.js" 2>/dev/null || echo "  (may already exist)"
 fi
+
+# Start Hammerspoon
+open -a Hammerspoon 2>/dev/null || true
 
 echo ""
 echo "=== Setup complete ==="
-echo "Restart Claude Code and type /voice to start talking."
+echo ""
+echo "IMPORTANT: Grant Hammerspoon Accessibility access:"
+echo "  System Settings → Privacy & Security → Accessibility → toggle Hammerspoon ON"
+echo ""
+echo "Usage:"
+echo "  Cmd+Shift+L  — start recording (rising tone)"
+echo "  Cmd+Shift+L  — stop & transcribe (falling tone, text is pasted + submitted)"
+echo "  /speak       — enable Claude's spoken responses (TTS)"
+echo "  /speak off   — disable TTS"
