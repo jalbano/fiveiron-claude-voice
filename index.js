@@ -63,19 +63,18 @@ server.tool(
 
       activeSayProc = proc;
 
-      await new Promise((resolve, reject) => {
-        proc.on("close", () => { activeSayProc = null; resolve(); });
-        proc.on("error", (err) => { activeSayProc = null; reject(err); });
+      // Fire-and-forget: resume Spotify and clean up when done
+      proc.on("close", async () => {
+        activeSayProc = null;
+        if (wasPlaying) {
+          try {
+            await execFileAsync("/usr/bin/osascript", [
+              "-e", 'tell application "Spotify" to play',
+            ]);
+          } catch {}
+        }
       });
-
-      // Resume Spotify if it was playing
-      if (wasPlaying) {
-        try {
-          await execFileAsync("/usr/bin/osascript", [
-            "-e", 'tell application "Spotify" to play',
-          ]);
-        } catch {}
-      }
+      proc.on("error", () => { activeSayProc = null; });
 
       return {
         content: [{ type: "text", text: "[Spoken successfully]" }],
