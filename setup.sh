@@ -88,8 +88,23 @@ fi
 # 4. Configure Hammerspoon hotkey
 echo "Configuring Hammerspoon..."
 mkdir -p "$HOME/.hammerspoon"
-cp "$SCRIPT_DIR/hammerspoon.lua" "$HOME/.hammerspoon/init.lua"
-echo "Hammerspoon config installed"
+if [ -f "$HOME/.hammerspoon/init.lua" ]; then
+  if ! diff -q "$SCRIPT_DIR/hammerspoon.lua" "$HOME/.hammerspoon/init.lua" &>/dev/null; then
+    echo "  WARNING: ~/.hammerspoon/init.lua already exists and differs."
+    read -rp "  Overwrite it? [y/N] " hs_answer
+    if [[ ! "$hs_answer" =~ ^[Yy] ]]; then
+      echo "  Skipped — you can manually merge $SCRIPT_DIR/hammerspoon.lua"
+    else
+      cp "$SCRIPT_DIR/hammerspoon.lua" "$HOME/.hammerspoon/init.lua"
+      echo "  Hammerspoon config replaced"
+    fi
+  else
+    echo "  Hammerspoon config already up to date"
+  fi
+else
+  cp "$SCRIPT_DIR/hammerspoon.lua" "$HOME/.hammerspoon/init.lua"
+  echo "Hammerspoon config installed"
+fi
 
 # 5. Generate sound effects
 echo "Generating sound effects..."

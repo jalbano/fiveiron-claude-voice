@@ -3,14 +3,21 @@ local recProc = nil
 local VOICE_DIR = "/tmp/voice-mcp"
 local REC_FILE = VOICE_DIR .. "/recording.wav"
 local WHISPER_DIR = os.getenv("HOME") .. "/.local/share/whisper.cpp"
+local SOUND_DIR = os.getenv("HOME") .. "/.local/share/speak-mcp"
+
+-- Find rec (sox) in Homebrew — works on both Apple Silicon and Intel Macs
+local REC_BIN = "/opt/homebrew/bin/rec"
+if not hs.fs.attributes(REC_BIN) then
+  REC_BIN = "/usr/local/bin/rec"
+end
 
 os.execute("mkdir -p " .. VOICE_DIR)
 
 hs.hotkey.bind({"cmd", "shift"}, "l", function()
   if not recording then
     recording = true
-    hs.sound.getByFile(os.getenv("HOME") .. "/.local/share/voice-mcp/start.wav"):play()
-    recProc = hs.task.new("/opt/homebrew/bin/rec", nil, {REC_FILE, "rate", "16k", "channels", "1"})
+    hs.sound.getByFile(SOUND_DIR .. "/start.wav"):play()
+    recProc = hs.task.new(REC_BIN, nil, {REC_FILE, "rate", "16k", "channels", "1"})
     recProc:start()
   else
     recording = false
@@ -36,7 +43,7 @@ hs.hotkey.bind({"cmd", "shift"}, "l", function()
             end)
           end)
         end
-        hs.sound.getByFile(os.getenv("HOME") .. "/.local/share/voice-mcp/done.wav"):play()
+        hs.sound.getByFile(SOUND_DIR .. "/done.wav"):play()
       end, {"-c", cmd}):start()
     end)
   end
