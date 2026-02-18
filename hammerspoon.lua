@@ -1,5 +1,6 @@
 local recording = false
 local recProc = nil
+local currentSound = nil
 local VOICE_DIR = "/tmp/voice-mcp"
 local REC_FILE = VOICE_DIR .. "/recording.wav"
 local WHISPER_DIR = os.getenv("HOME") .. "/.local/share/whisper.cpp"
@@ -16,9 +17,12 @@ os.execute("mkdir -p " .. VOICE_DIR)
 hs.hotkey.bind({"cmd", "shift"}, "l", function()
   if not recording then
     recording = true
-    hs.sound.getByFile(SOUND_DIR .. "/start.wav"):play()
-    recProc = hs.task.new(REC_BIN, nil, {REC_FILE, "rate", "16k", "channels", "1"})
-    recProc:start()
+    currentSound = hs.sound.getByFile(SOUND_DIR .. "/start.wav")
+    currentSound:play()
+    hs.timer.doAfter(0.2, function()
+      recProc = hs.task.new(REC_BIN, nil, {REC_FILE, "rate", "16k", "channels", "1"})
+      recProc:start()
+    end)
   else
     recording = false
     if recProc and recProc:isRunning() then
@@ -42,8 +46,9 @@ hs.hotkey.bind({"cmd", "shift"}, "l", function()
               hs.pasteboard.setContents(prev or "")
             end)
           end)
+          currentSound = hs.sound.getByFile(SOUND_DIR .. "/done.wav")
+          currentSound:play()
         end
-        hs.sound.getByFile(SOUND_DIR .. "/done.wav"):play()
       end, {"-c", cmd}):start()
     end)
   end
